@@ -8,17 +8,12 @@ class Archiver
   def initialize
     @log = Logger.new(STDERR)
     config = Pit.get('twitter.com', :require => {
-      'consumer_key'        => 'your consumer key',
-      'consumer_secret'     => 'your consumer key secret',
-      'access_token'        => 'your access token',
-      'access_token_secret' => 'your access token secret',
+      :consumer_key       => 'your consumer key',
+      :consumer_secret    => 'your consumer key secret',
+      :oauth_token        => 'your access token',
+      :oauth_token_secret => 'your access token secret',
     })
-    @twitter = Twitter::Client.new(
-      :consumer_key       => config['consumer_key'],
-      :consumer_secret    => config['consumer_secret'],
-      :oauth_token        => config['access_token'],
-      :oauth_token_secret => config['access_token_secret'],
-    )
+    @twitter = Twitter::Client.new(config)
   end
 
   def tweet2obj(tweet)
@@ -57,14 +52,67 @@ class Archiver
   end
 
   def start(id)
-    results = []
-    @twitter.user_timeline(id, :count => 50, :contributor_details => true).each do |tweet|
-      results.push(tweet2obj(tweet))
+    results = {}
+    @log.info('fetch timeline')
+    1.upto(16) do |page|
+      @log.info('page ' + page.to_s)
+      tweets = @twitter.user_timeline(id, :count => 200, :page => page)
+      break if tweets.length == 0
+      tweets.each do |tweet|
+        yyyy_mm = sprintf('%04d_%02d', tweet.created_at.year, tweet.created_at.month)
+        (results[yyyy_mm] ||= []).push(tweet2obj(tweet))
+      end
     end
 
-    open(File.dirname(__FILE__) + '/../data/js/tweets/' + '2013_02.js', 'wb') do |des|
-      des.write('Grailbird.data.tweets_2013_02 = ')
-      des.write(JSON.pretty_generate(results))
+    dir = File.dirname(__FILE__) + '/../out/data/js/'
+    # user details
+    open(dir + 'user_details.js', 'wb') do |file|
+      @log.info('write to user_details.js')
+      user = @twitter.user(id)
+      file.write('var user_details = ')
+      file.write(JSON.pretty_generate({
+        'screen_name' => user.screen_name,
+        'location'    => user.location,
+        'full_name'   => user.name,
+        'bio'         => user.description,
+        'id'          => user.id.to_s,
+        'created_at'  => user.created_at,
+      }))
+    end
+    # index
+    open(dir + 'tweet_index.js', 'wb') do |file|
+      @log.info('write to tweet_index.js')
+      data = results.keys.sort.reverse.map do |key|
+        year, month = key.split(/_/, 2)
+        {
+          'file_name'   => "data/js/tweets/#{ key }.js",
+          'var_name'    => "tweets_#{ key }",
+          'tweet_count' => results[key].length,
+          'year'        => year.to_i,
+          'month'       => month.to_i,
+        }
+      end
+      file.write('var tweet_index = ')
+      file.write(JSON.pretty_generate(data))
+    end
+    # payload
+    open(dir + 'payload_details.js', 'wb') do |file|
+      @log.info('write to payload_details.js')
+      data = {
+        'tweets'     => results.map{|k,v| v.length }.reduce(:+),
+        'created_at' => Time.now.to_s,
+      }
+      file.write('var payload_details = ')
+      file.write(JSON.pretty_generate(data))
+    end
+    # tweets
+    results.each do |key, value|
+      file = "tweets/#{ key }.js"
+      @log.info('write to ' + file)
+      open(dir + file, 'wb') do |file|
+        file.write("Grailbird.data.tweets_#{ key } = ")
+        file.write(JSON.pretty_generate(value))
+      end
     end
   end
 end
