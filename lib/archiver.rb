@@ -54,14 +54,20 @@ class Archiver
   def start(id)
     results = {}
     @log.info('fetch timeline')
-    1.upto(16) do |page|
-      @log.info('page ' + page.to_s)
-      tweets = @twitter.user_timeline(id, :count => 200, :page => page)
+    max_id = nil
+    while true do
+      @log.info('max_id: ' + max_id.to_s)
+      options = { :count => 200 }
+      options[:max_id] = max_id if max_id
+      tweets = @twitter.user_timeline(id, options)
+      @log.info('%s tweets fetched' % tweets.length)
       break if tweets.length == 0
       tweets.each do |tweet|
         yyyy_mm = sprintf('%04d_%02d', tweet.created_at.year, tweet.created_at.month)
         (results[yyyy_mm] ||= []).push(tweet2obj(tweet))
       end
+      sleep 1
+      max_id = tweets[-1].id - 1
     end
 
     dir = File.dirname(__FILE__) + '/../out/data/js/'
