@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
-# -*- coding: utf-8 -*-
+require 'cgi'
 require 'logger'
+require 'open-uri'
 require 'pit'
 require 'twitter'
 
@@ -38,6 +39,23 @@ class Archiver
       'hashtags'      => tweet.hashtags.map     {|e| e.to_hash },
       'urls'          => tweet.urls.map         {|e| e.to_hash },
     }
+    # download media images
+    dir = File.dirname(__FILE__) + '/../out/img/data/'
+    obj['entities']['media'].each do |media|
+      imgpath = CGI.escape(media[:media_url])
+      @log.info('download: %s' % imgpath)
+      begin
+        open(media[:media_url]) do |src|
+          open(dir + imgpath, 'wb') do |des|
+            des.write(src.read)
+          end
+        end
+      rescue => e
+        @log.warn('failed: %s' % e)
+      end
+      media[:media_url] = './img/data/' + CGI.escape(imgpath)
+      media[:media_url_https] = './img/data/' + CGI.escape(imgpath)
+    end
     # user
     obj['user'] = { 'id_str' => tweet.user.id.to_s }
     %w(name screen_name protected profile_image_url_https id verified).each do |key|
@@ -55,7 +73,7 @@ class Archiver
     results = {}
     @log.info('fetch timeline')
     max_id = nil
-    while true do
+    loop do
       @log.info('max_id: ' + max_id.to_s)
       options = { :count => 200 }
       options[:max_id] = max_id if max_id
