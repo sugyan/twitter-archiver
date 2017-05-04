@@ -1,8 +1,10 @@
 #!/usr/bin/env ruby
 
-abort("usage: #{__FILE__} <twitter id>") unless ARGV.size > 0
+abort("usage: #{__FILE__} <Twitter ID (screen_name)>") if ARGV.empty?
 
 $LOAD_PATH.unshift File.dirname(__FILE__) + '/../lib'
 require 'archiver'
 
-Archiver.new.start(ARGV.shift)
+consumer_key = ENV['CONSUMER_KEY']
+consumer_secret = ENV['CONSUMER_SECRET']
+Archiver.new(consumer_key, consumer_secret).run(ARGV[0])
